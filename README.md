@@ -14,8 +14,11 @@ Contrepartie : sur l'instance publique, **toute personne connaissant le nom exac
 topic peut s'y abonner *et* y publier**. Il n'y a ni mot de passe ni liste d'accès.
 
 **Le nom du topic est le seul secret.** C'est pourquoi il est aléatoire
-(`nicolas-hand-d1-` + 16 caractères tirés au sort) et non un nom devinable comme
+(`handball-live-` + 14 caractères tirés au sort) et non un nom devinable comme
 `hand-alertes`, qui serait trouvé en quelques minutes par n'importe qui.
+
+Sur GitHub il est stocké comme **secret Actions** (`NTFY_TOPIC`), jamais dans le
+code — le dépôt est public.
 
 Concrètement :
 
@@ -35,7 +38,7 @@ Aucune dépendance à installer. Node 18+ suffit (`fetch` natif).
 **1. Le topic** — déjà généré dans `.ntfy-topic`. Pour en créer un autre :
 
 ```bash
-node -e "console.log('nicolas-hand-d1-'+require('crypto').randomBytes(12).toString('base64url').replace(/[-_]/g,'').slice(0,16).toLowerCase())" > .ntfy-topic
+node -e "console.log('handball-live-'+require('crypto').randomBytes(12).toString('base64url').replace(/[-_]/g,'').slice(0,14).toLowerCase())" > .ntfy-topic
 ```
 
 **2. Chaque téléphone** — installer l'appli **ntfy** (iOS / Android), puis
@@ -52,7 +55,7 @@ npm run test-notif      # doit faire sonner tous les téléphones abonnés
 ```bash
 npm start        # lance la surveillance en continu
 npm run check    # un seul relevé, puis sortie (utile pour un cron)
-npm test         # 9 scénarios de match rejoués hors ligne
+npm test         # 13 scénarios de match rejoués hors ligne
 ```
 
 Ajouter `--dry-run` pour afficher les notifications au lieu de les envoyer :
@@ -96,7 +99,13 @@ Le score est lu dans `.scores` (`"27 - 25"`). À chaque relevé on compare au pr
 - le suivi démarre 10 min avant le coup d'envoi, donc le score de départ est connu
   (0-0) et le premier but n'est jamais perdu ;
 - si le processus démarre alors qu'un match est déjà à 12-10, le score est enregistré
-  en silence — pas de rafale de 22 notifications.
+  en silence — pas de rafale de 22 notifications ;
+- **garde-fou** : le départ à 0-0 n'est supposé que sur un match effectivement en
+  cours. Si la source ne publiait le score qu'au coup de sifflet final, en déduire
+  les buts enverrait ~58 notifications d'un coup ;
+- **garde-fou** : au-delà de 8 buts entre deux relevés, on considère que la source
+  a sauté, pas qu'il y a eu 20 buts en 30 secondes. Le bond est journalisé, pas
+  notifié.
 
 La classe CSS utilisée par la LNH **pendant** un match est encore inconnue (voir plus
 bas). La détection ne s'y fie donc pas : est « en cours » tout match dont le score est
@@ -110,10 +119,10 @@ tient quel que soit le nom de cette classe.
 | 0 — Reconnaissance | Faite, sauf le payload d'un match en direct |
 | 1 — Squelette | Fait |
 | 2 — Détection des matchs | Fait |
-| 3 — Polling et buts | Fait, validé sur 9 scénarios hors ligne |
+| 3 — Polling et buts | Fait, validé sur 13 scénarios hors ligne |
 | 4 — ntfy | Fait, envoi réel vérifié |
-| 5 — Hébergement | **Non tranché** |
-| 6 — Test réel | Prévu |
+| 5 — Hébergement | GitHub Actions, validé par la capture ; workflow de saison à écrire |
+| 6 — Test réel | Capture du 29/08/2026 programmée |
 
 ### Ce qui reste ouvert
 
@@ -126,18 +135,21 @@ n'y avait aucun match en France au moment du développement. Trois inconnues :
    basculer sur l'endpoint `eStatsChannels` (aujourd'hui en erreur 500 hors saison) ;
 3. la latence réelle entre le but et sa publication sur lnh.fr.
 
-Une capture automatique est programmée sur ce PC (tâche Windows
-`HandD1-CaptureLive-TDC`) pour le **samedi 29 août 2026 à 19h55**, pendant
-Paris – Montpellier (Trophée des Champions). Elle enregistre les réponses brutes dans
-`recon/captures/` et répond aux trois questions.
+Le workflow [`capture-live.yml`](.github/workflows/capture-live.yml) répond à ces
+trois questions. Il tourne le **samedi 29 août 2026**, un job par match du Trophée
+des Champions : 16h35 pour Aix – Toyoda Gosei (17h00), 19h35 pour la finale
+Paris – Montpellier (20h00). Les réponses brutes partent en artefact.
 
-**L'hébergement n'est pas décidé** — à trancher après cette capture, car le choix
-dépend de la réponse à la question 2 :
+Le job de la finale court jusqu'à 01h30 : une finale ne peut pas finir sur un nul,
+et le pire cas réglementaire — temps plein, deux prolongations de 2×5 min avec
+leurs pauses, puis tirs au but — repousse la fin vers 22h25.
 
-- si le calendrier suffit, un cron toutes les 30 s pendant les fenêtres de match
-  convient, et GitHub Actions (granularité ~5 min) reste trop lent pour le direct ;
-- un petit process continu (VM gratuite, ou ce PC allumé les soirs de match) reste
-  l'option la plus simple et la plus fiable.
+**L'hébergement est tranché : GitHub Actions.** Le cron ne sert qu'à *allumer* le
+job, avec sa granularité approximative ; c'est le job lui-même, qui peut durer
+6 heures, qui boucle ensuite toutes les 30 secondes. L'imprécision du cron décale
+l'allumage, pas la détection des buts. Sur un dépôt public les minutes sont
+illimitées. Reste à écrire le workflow de la saison, une fois la question 2
+tranchée.
 
 ### Fenêtres de match réelles (saison 2026-27)
 
