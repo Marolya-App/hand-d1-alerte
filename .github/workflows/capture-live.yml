@@ -1,0 +1,51 @@
+# Capture Phase 0 : observer lnh.fr PENDANT un vrai match.
+#
+# Pourquoi ici et pas sur le PC : le but du projet est justement de ne dependre
+# d'aucune machine allumee. Autant valider le mecanisme d'hebergement en meme
+# temps que la source de donnees.
+#
+# GitHub Actions ne sait pas planifier une date unique, mais un cron avec un
+# jour et un mois fixes ne se declenche qu'une fois par an - ce qui suffit.
+# Un job peut durer jusqu'a 6 h : on couvre donc les deux matchs du
+# Trophee des Champions du 29/08/2026 (17h00 et 20h00 Paris) avec un seul job,
+# plutot que deux crons dont le second pourrait rater son declenchement.
+
+name: Capture live
+
+on:
+  schedule:
+    # 14h35 UTC = 16h35 Paris (CEST), soit 25 min avant le match de 17h00.
+    # Marge volontaire : les crons GitHub demarrent souvent avec du retard.
+    - cron: '35 14 29 8 *'
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: 'Duree de la capture, en minutes'
+        required: false
+        default: '340'
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    # 6 h est le plafond GitHub. La capture s'arrete d'elle-meme avant.
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Capture
+        run: node recon/capture-live.js --minutes ${{ inputs.minutes || '340' }}
+
+      - name: Recuperer les captures
+        # always() : meme si le job est annule ou expire, on veut ce qui a ete vu.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: captures-${{ github.run_id }}
+          path: recon/captures/
+          if-no-files-found: warn
+          retention-days: 30
