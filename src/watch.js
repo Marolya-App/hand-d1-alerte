@@ -85,7 +85,14 @@ async function tick() {
     if (m.statut === 'a-venir') e.vuAvantMatch = true;
 
     // --- coup d'envoi ---
-    if (!e.debutNotifie && m.statut === 'en-cours') {
+    // Deux declencheurs, dont un qui ne depend pas de la source : l'horloge.
+    // Si lnh.fr n'affichait le score qu'a la fin du match, attendre qu'un score
+    // chiffre apparaisse ne notifierait jamais le debut - alors que l'heure du
+    // coup d'envoi est connue d'avance. On se fie donc a elle, et le score
+    // n'est plus qu'un declencheur de secours s'il arrive en avance.
+    const coupEnvoiPasse = m.coupEnvoi ? maintenant >= m.coupEnvoi.getTime() : false;
+
+    if (!e.debutNotifie && m.statut !== 'termine' && (m.statut === 'en-cours' || coupEnvoiPasse)) {
       log(`coup d'envoi : ${m.home} vs ${m.away}`);
       await messages.coupEnvoi(m);
       e.debutNotifie = true;

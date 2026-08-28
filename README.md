@@ -55,7 +55,7 @@ npm run test-notif      # doit faire sonner tous les téléphones abonnés
 ```bash
 npm start        # lance la surveillance en continu
 npm run check    # un seul relevé, puis sortie (utile pour un cron)
-npm test         # 16 scénarios de match rejoués hors ligne
+npm test         # 17 scénarios de match rejoués hors ligne
 ```
 
 Ajouter `--dry-run` pour afficher les notifications au lieu de les envoyer :
@@ -89,6 +89,17 @@ StarLigue seule, sans ProLigue ni D1 féminine.
 Le détail complet des endpoints, avec les payloads réels, est dans
 [recon/PHASE0-RECON.md](recon/PHASE0-RECON.md).
 
+### Le coup d'envoi
+
+Notifié **à l'horloge**, à partir de l'heure de coup d'envoi lue dans le
+calendrier — pas à l'apparition d'un score. C'est délibéré : si lnh.fr laissait
+« vs » pendant tout le match, attendre un score chiffré ne notifierait jamais le
+début, alors que l'heure est connue d'avance. Un score qui apparaît plus tôt sert
+de déclencheur de secours.
+
+Conséquence utile : **même si la source reste muette pendant 60 minutes, le début
+et la fin arrivent quand même.** Seuls les buts seraient perdus.
+
 ### Détection des buts
 
 Le score est lu dans `.scores` (`"27 - 25"`). À chaque relevé on compare au précédent :
@@ -119,7 +130,7 @@ tient quel que soit le nom de cette classe.
 | 0 — Reconnaissance | Faite, sauf le payload d'un match en direct |
 | 1 — Squelette | Fait |
 | 2 — Détection des matchs | Fait |
-| 3 — Polling et buts | Fait, validé sur 16 scénarios hors ligne |
+| 3 — Polling et buts | Fait, validé sur 17 scénarios hors ligne |
 | 4 — ntfy | Fait, envoi réel vérifié |
 | 5 — Hébergement | GitHub Actions, portier + `concurrency` vérifiés |
 | 6 — Test réel | Capture **et** watcher réel sur le Trophée des Champions, 29/08/2026 |

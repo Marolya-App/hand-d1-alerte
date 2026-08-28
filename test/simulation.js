@@ -211,6 +211,21 @@ async function rejouer(etapes) {
   assert.strictEqual(lnh.parseCoupEnvoi('sam. 10 janv. 18h30', 2026).getUTCFullYear(), 2027);
   console.log('ok  dates : bascule d annee civile en cours de saison');
 
+  // --- Scenario 13 : la source n'affiche JAMAIS le score en direct ---------
+  // Le pire cas realiste : lnh.fr laisse "vs" pendant tout le match et ne
+  // publie le score qu'au coup de sifflet. On doit quand meme recevoir le
+  // debut ET la fin - le debut se declenche a l'horloge, pas au score.
+  const dans2min = dateLNH(new Date(Date.now() + 2 * 60000));
+  const ilYa1min = dateLNH(new Date(Date.now() - 60000));
+  res = await rejouer([
+    { statusClass: 'waiting', scoreClass: 'is-coming', score: 'vs', date: dans2min },
+    { statusClass: 'waiting', scoreClass: 'is-coming', score: 'vs', date: ilYa1min },
+    { statusClass: 'waiting', scoreClass: 'is-coming', score: 'vs', date: ilYa1min },
+    { statusClass: 'finish', scoreClass: 'is-finish', score: '30 - 28', date: ilYa1min },
+  ]);
+  assert.deepStrictEqual(res, ['DEBUT Chambéry vs Paris', 'FIN 30-28']);
+  console.log('ok  source muette pendant le match : debut et fin quand meme notifies');
+
   // --- Scenarios 14 a 16 : le portier (mode GitHub Actions) ----------------
   // C'est la piece qui remplace un cron precis. Sa regle : ne sortir que si
   // rien ne tourne ET que rien n'approche.
@@ -301,7 +316,7 @@ async function rejouer(etapes) {
   }
 
   nettoyer();
-  console.log('\n16 scenarios passes.');
+  console.log('\n17 scenarios passes.');
 })().catch((e) => {
   nettoyer();
   console.error(e);
