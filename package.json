@@ -1,0 +1,14 @@
+{
+  "name": "hand-d1-alerte",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Notifications push a chaque but de Daikin StarLigue, via ntfy.sh",
+  "type": "commonjs",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node src/watch.js",
+    "check": "node src/watch.js --once",
+    "test": "node test/simulation.js",
+    "test-notif": "node src/ntfy.js --test"
+  }
+}
