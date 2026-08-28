@@ -48,9 +48,11 @@ const messages = {
       priorite: 4,
     }),
 
+  // Le club qui marque est dans le titre, la marque dans le corps : sans ca on
+  // lisait "Chambéry — Chambéry 1 - 0 Paris", illisible.
   but: (m, equipe) =>
-    notifier(`${equipe} — ${m.home} ${m.homeScore} - ${m.awayScore} ${m.away}`, {
-      titre: 'BUT !',
+    notifier(`${m.home} ${m.homeScore} - ${m.awayScore} ${m.away}`, {
+      titre: `BUT ! ${equipe}`,
       tags: ['zap'],
       priorite: 4,
     }),

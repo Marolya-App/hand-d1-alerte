@@ -64,6 +64,9 @@ module.exports = {
     avantCoupEnvoiMs: 10 * 60 * 1000,
     // Filet de securite : si un match reste "en cours" au-dela, on le laisse tomber.
     dureeMaxMatchMs: 3 * 60 * 60 * 1000,
+    // Au-dela de ce nombre de buts entre deux releves, on considere que la
+    // source a saute (et non qu'il y a eu 20 buts en 30 s) : on n'enumere pas.
+    butsMaxParReleve: 8,
   },
 
   stateFile: path.join(__dirname, 'state.json'),

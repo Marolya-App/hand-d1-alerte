@@ -211,8 +211,40 @@ async function rejouer(etapes) {
   ]);
   console.log('ok  match suivi avant le coup d envoi : le 1er but n est pas perdu');
 
+  // --- Scenario 10 : la source ne se rafraichit qu'a la fin -----------------
+  // Scenario catastrophe. Si lnh.fr affiche "vs" pendant tout le match puis
+  // "30 - 28" au coup de sifflet, il ne faut SURTOUT PAS en deduire 58 buts.
+  res = await rejouer([
+    { statusClass: 'waiting', scoreClass: 'is-coming', score: 'vs', date: imminent },
+    { statusClass: 'finish', scoreClass: 'is-finish', score: '30 - 28', date: imminent },
+  ]);
+  assert.deepStrictEqual(res, ['FIN 30-28']);
+  console.log('ok  score revele seulement a la fin : 1 notif, pas 58');
+
+  // --- Scenario 11 : bond invraisemblable en plein match --------------------
+  res = await rejouer([
+    { statusClass: 'live', scoreClass: 'is-live', score: '5 - 5', date: imminent },
+    { statusClass: 'live', scoreClass: 'is-live', score: '20 - 18', date: imminent },
+  ]);
+  assert.deepStrictEqual(res, ['DEBUT Chambéry vs Paris']);
+  console.log('ok  bond de 28 buts entre 2 releves : ignore, pas de rafale');
+
+  // --- Scenario 12 : un rattrapage normal reste enumere ---------------------
+  // Le garde-fou ne doit pas casser le cas legitime : 3 buts manques -> 3 notifs.
+  res = await rejouer([
+    { statusClass: 'live', scoreClass: 'is-live', score: '5 - 5', date: imminent },
+    { statusClass: 'live', scoreClass: 'is-live', score: '7 - 6', date: imminent },
+  ]);
+  assert.deepStrictEqual(res, [
+    'DEBUT Chambéry vs Paris',
+    'BUT Chambéry 6-5',
+    'BUT Chambéry 7-5',
+    'BUT Paris 7-6',
+  ]);
+  console.log('ok  rattrapage normal (3 buts) : toujours enumere');
+
   nettoyer();
-  console.log('\n9 scenarios passes.');
+  console.log('\n12 scenarios passes.');
 })().catch((e) => {
   nettoyer();
   console.error(e);

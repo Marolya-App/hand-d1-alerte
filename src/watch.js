@@ -19,6 +19,11 @@ const config = require('../config');
 
 const ONCE = process.argv.includes('--once');
 
+// lnh.fr renvoie des 500 sporadiques. Si l'un tombe pendant un match, il ne faut
+// surtout pas retomber a la cadence de veille : ce serait 10 minutes de trou,
+// donc une vingtaine de buts manques. On memorise le regime en cours.
+let enDirect = false;
+
 function heure() {
   return new Date().toLocaleTimeString('fr-FR');
 }
@@ -46,7 +51,8 @@ async function tick() {
     matchs = await lnh.matchsPertinents(new Date());
   } catch (e) {
     log(`erreur LNH : ${e.message}`);
-    return config.timing.veilleMs; // on retente au rythme de veille
+    // En plein match on reessaie tout de suite, pas dans 10 minutes.
+    return enDirect ? config.timing.matchMs : config.timing.veilleMs;
   }
 
   const actifs = matchs.filter((m) => aSuivre(m, maintenant));
@@ -82,10 +88,11 @@ async function tick() {
 
     // --- buts ---
     if (m.homeScore !== null && m.awayScore !== null) {
-      if (e.homeScore === null && e.vuAvantMatch) {
-        // On suivait deja ce match avant le coup d'envoi : le score de depart
-        // est forcement 0-0, donc rien n'est perdu si le premier releve arrive
-        // deja a 1-0.
+      // Garde-fou n°1 : on ne suppose un depart a 0-0 que si le match est
+      // effectivement EN COURS. Si le score apparait d'un bloc alors que le
+      // match est deja termine (cas ou la source ne se rafraichit pas en
+      // direct), supposer 0-0 declencherait une rafale de ~58 notifications.
+      if (e.homeScore === null && e.vuAvantMatch && m.statut === 'en-cours') {
         e.homeScore = 0;
         e.awayScore = 0;
       }
@@ -98,6 +105,21 @@ async function tick() {
       } else {
         const dHome = m.homeScore - e.homeScore;
         const dAway = m.awayScore - e.awayScore;
+
+        // Garde-fou n°2 : un bond invraisemblable entre deux releves n'est pas
+        // une avalanche de buts, c'est une anomalie de la source. On l'enregistre
+        // sans spammer — la notification de fin donnera le score.
+        if (dHome + dAway > config.timing.butsMaxParReleve) {
+          log(
+            `bond anormal ignore : ${e.homeScore}-${e.awayScore} -> ` +
+              `${m.homeScore}-${m.awayScore} (${dHome + dAway} buts d'un coup)`
+          );
+          e.homeScore = m.homeScore;
+          e.awayScore = m.awayScore;
+          e.majLe = maintenant;
+          s.matchs[m.id] = e;
+          continue;
+        }
 
         // Un but = une notification, meme si le polling en a rate plusieurs.
         // On reconstitue les scores intermediaires pour rester fidele.
@@ -133,6 +155,7 @@ async function tick() {
   }
 
   state.sauver(s);
+  enDirect = actifs.length > 0;
 
   if (actifs.length) {
     log(
