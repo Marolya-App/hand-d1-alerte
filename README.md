@@ -55,7 +55,7 @@ npm run test-notif      # doit faire sonner tous les téléphones abonnés
 ```bash
 npm start        # lance la surveillance en continu
 npm run check    # un seul relevé, puis sortie (utile pour un cron)
-npm test         # 13 scénarios de match rejoués hors ligne
+npm test         # 16 scénarios de match rejoués hors ligne
 ```
 
 Ajouter `--dry-run` pour afficher les notifications au lieu de les envoyer :
@@ -119,10 +119,10 @@ tient quel que soit le nom de cette classe.
 | 0 — Reconnaissance | Faite, sauf le payload d'un match en direct |
 | 1 — Squelette | Fait |
 | 2 — Détection des matchs | Fait |
-| 3 — Polling et buts | Fait, validé sur 13 scénarios hors ligne |
+| 3 — Polling et buts | Fait, validé sur 16 scénarios hors ligne |
 | 4 — ntfy | Fait, envoi réel vérifié |
-| 5 — Hébergement | GitHub Actions, validé par la capture ; workflow de saison à écrire |
-| 6 — Test réel | Capture du 29/08/2026 programmée |
+| 5 — Hébergement | GitHub Actions, portier + `concurrency` vérifiés |
+| 6 — Test réel | Capture **et** watcher réel sur le Trophée des Champions, 29/08/2026 |
 
 ### Ce qui reste ouvert
 
@@ -151,6 +151,29 @@ l'allumage, pas la détection des buts. Sur un dépôt public les minutes sont
 illimitées. Reste à écrire le workflow de la saison, une fois la question 2
 tranchée.
 
+### Le portier
+
+Le cron ne vise pas l'heure du coup d'envoi. Il ne peut pas : il est figé en UTC,
+donc faux six mois par an, et les coups d'envoi varient déjà d'un jour à l'autre.
+Il frappe donc **toutes les 30 minutes, vendredi/samedi/dimanche de 13h à 21h
+UTC** — une fenêtre qui couvre tous les coups d'envoi en heure d'été comme en
+heure d'hiver — et c'est le script qui décide, à partir de l'heure de Paris :
+
+- **aucun match dans les 90 minutes** → le job ressort en une dizaine de
+  secondes. C'est le cas de l'écrasante majorité des déclenchements ;
+- **un match approche ou tourne** → il reste, et bascule à 30 s au coup d'envoi.
+
+Il ne décroche pas dans le creux entre deux matchs d'une même soirée : il ne sort
+que si rien ne tourne **et** que rien n'approche.
+
+Un groupe `concurrency` partagé empêche deux watchers de tourner en parallèle —
+sans quoi chaque but serait notifié deux fois, l'état du score vivant dans le job
+et non entre les jobs. Vérifié en conditions réelles : un second run créé pendant
+qu'un premier tourne reste en attente et ne démarre qu'après sa fin.
+
+Conséquence : **rien à retoucher au passage à l'heure d'hiver**, ni quand la LNH
+déplace un match.
+
 ### Fenêtres de match réelles (saison 2026-27)
 
 Vendredi 20h00 et 20h30, samedi 19h00 et 20h00, **dimanche 17h00**. Les dimanches
@@ -174,16 +197,10 @@ C'est un *nom de zone*, pas un décalage fixe : la bascule CEST → CET est
 appliquée toute seule. Le job affiche `CEST` en août, il affichera `CET` en
 novembre.
 
-**Le déclenchement des crons** — ⚠️ **pas réglé, à traiter en Phase 5.** Les
-crons GitHub sont toujours exprimés en UTC et ne suivent aucun fuseau. Un
-`cron: '35 17 * * 5'` vaut 19h35 à Paris l'été mais 18h35 l'hiver. Le workflow
-de la saison **dérivera d'une heure fin octobre** si on n'y prend pas garde.
-
-La parade retenue : déclencher le job une heure plus tôt que nécessaire, ce qui
-le rend correct ou en avance dans les deux régimes, et laisser le script décider
-du moment d'agir à partir de l'heure de Paris — qui, elle, est juste toute
-l'année. Sur un repo public les minutes sont illimitées, cette marge ne coûte
-rien.
+**Le déclenchement des crons** — réglé, par le portier (voir ci-dessous). Les
+crons GitHub sont figés en UTC et ne suivent aucun fuseau : `35 17 * * 5` vaut
+19h35 à Paris l'été mais 18h35 l'hiver. Plutôt que de chercher une valeur juste
+— il n'y en a pas — on a cessé de demander de la précision au cron.
 
 ## Fragilité assumée
 
