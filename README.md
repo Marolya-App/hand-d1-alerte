@@ -144,12 +144,17 @@ Le job de la finale court jusqu'à 01h30 : une finale ne peut pas finir sur un n
 et le pire cas réglementaire — temps plein, deux prolongations de 2×5 min avec
 leurs pauses, puis tirs au but — repousse la fin vers 22h25.
 
-**L'hébergement est tranché : GitHub Actions.** Le cron ne sert qu'à *allumer* le
-job, avec sa granularité approximative ; c'est le job lui-même, qui peut durer
-6 heures, qui boucle ensuite toutes les 30 secondes. L'imprécision du cron décale
-l'allumage, pas la détection des buts. Sur un dépôt public les minutes sont
-illimitées. Reste à écrire le workflow de la saison, une fois la question 2
-tranchée.
+En parallèle, [`test-tdc.yml`](.github/workflows/test-tdc.yml) fait tourner le
+**vrai watcher** sur ces deux matchs, avec de vraies notifications : c'est le seul
+match avant la première journée du 4 septembre. Le périmètre est élargi au Trophée
+des Champions par variables d'environnement, sans toucher au code.
+
+**L'hébergement est tranché : GitHub Actions**, via
+[`suivi-live.yml`](.github/workflows/suivi-live.yml). Le cron ne sert qu'à
+*allumer* le job, avec sa granularité approximative ; c'est le job lui-même, qui
+peut durer 6 heures, qui boucle ensuite toutes les 30 secondes. L'imprécision du
+cron décale l'allumage, pas la détection des buts. Sur un dépôt public les minutes
+sont illimitées.
 
 ### Le portier
 
