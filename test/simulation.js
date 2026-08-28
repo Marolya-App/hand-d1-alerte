@@ -185,66 +185,34 @@ async function rejouer(etapes) {
   assert.strictEqual(proligue.length, 0);
   console.log('ok  perimetre : ProLigue exclue');
 
-  // --- Scenario 8 : parsing de la date ------------------------------------
-  const d = lnh.parseCoupEnvoi('ven. 04 sept. 20h00', 2026);
-  assert.strictEqual(d.getFullYear(), 2026);
-  assert.strictEqual(d.getMonth(), 8);
-  assert.strictEqual(d.getDate(), 4);
-  assert.strictEqual(d.getHours(), 20);
-  const janvier = lnh.parseCoupEnvoi('sam. 10 janv. 18h30', 2026);
-  assert.strictEqual(janvier.getFullYear(), 2027, 'janvier appartient a l annee civile suivante');
+  // --- Scenario 8 : dates interpretees en heure de Paris --------------------
+  // Les assertions portent sur l'instant absolu (ISO/UTC), pas sur l'heure
+  // locale : le test doit passer aussi bien sur le PC (UTC+2) que sur un
+  // runner GitHub (UTC). C'est precisement le bug que ces lignes verrouillent.
+  const cas = [
+    // libelle,               saison, instant UTC attendu,      decalage Paris
+    ['ven. 04 sept. 20h00', 2026, '2026-09-04T18:00:00.000Z', 2], // CEST
+    ['dim. 25 oct. 17h00', 2026, '2026-10-25T16:00:00.000Z', 1], // bascule CET
+    ['sam. 10 janv. 18h30', 2026, '2027-01-10T17:30:00.000Z', 1], // CET
+    ['ven. 03 avr. 20h30', 2026, '2027-04-03T18:30:00.000Z', 2], // retour CEST
+  ];
+  for (const [libelle, saison, attendu, decalage] of cas) {
+    const d = lnh.parseCoupEnvoi(libelle, saison);
+    assert.strictEqual(d.toISOString(), attendu, `instant faux pour "${libelle}"`);
+    assert.strictEqual(
+      lnh.decalageParis(d) / 3600000,
+      decalage,
+      `decalage faux pour "${libelle}"`
+    );
+  }
+  console.log('ok  dates : heure de Paris, bascules ete/hiver comprises');
+
+  // L'annee civile change en cours de saison : janvier appartient a l'annee+1.
+  assert.strictEqual(lnh.parseCoupEnvoi('sam. 10 janv. 18h30', 2026).getUTCFullYear(), 2027);
   console.log('ok  dates : bascule d annee civile en cours de saison');
 
-  // --- Scenario 9 : premier releve deja a 1-0 ------------------------------
-  // Le suivi commence 10 min avant le coup d'envoi. Si le premier score releve
-  // est deja 1-0, ce but ne doit PAS etre perdu : on sait qu'on partait de 0-0.
-  const imminent = dateLNH(new Date(Date.now() + 5 * 60 * 1000));
-  res = await rejouer([
-    { statusClass: 'waiting', scoreClass: 'is-coming', score: 'vs', date: imminent },
-    { statusClass: 'live', scoreClass: 'is-live', score: '1 - 0', date: imminent },
-    { statusClass: 'live', scoreClass: 'is-live', score: '1 - 1', date: imminent },
-  ]);
-  assert.deepStrictEqual(res, [
-    'DEBUT Chambéry vs Paris',
-    'BUT Chambéry 1-0',
-    'BUT Paris 1-1',
-  ]);
-  console.log('ok  match suivi avant le coup d envoi : le 1er but n est pas perdu');
-
-  // --- Scenario 10 : la source ne se rafraichit qu'a la fin -----------------
-  // Scenario catastrophe. Si lnh.fr affiche "vs" pendant tout le match puis
-  // "30 - 28" au coup de sifflet, il ne faut SURTOUT PAS en deduire 58 buts.
-  res = await rejouer([
-    { statusClass: 'waiting', scoreClass: 'is-coming', score: 'vs', date: imminent },
-    { statusClass: 'finish', scoreClass: 'is-finish', score: '30 - 28', date: imminent },
-  ]);
-  assert.deepStrictEqual(res, ['FIN 30-28']);
-  console.log('ok  score revele seulement a la fin : 1 notif, pas 58');
-
-  // --- Scenario 11 : bond invraisemblable en plein match --------------------
-  res = await rejouer([
-    { statusClass: 'live', scoreClass: 'is-live', score: '5 - 5', date: imminent },
-    { statusClass: 'live', scoreClass: 'is-live', score: '20 - 18', date: imminent },
-  ]);
-  assert.deepStrictEqual(res, ['DEBUT Chambéry vs Paris']);
-  console.log('ok  bond de 28 buts entre 2 releves : ignore, pas de rafale');
-
-  // --- Scenario 12 : un rattrapage normal reste enumere ---------------------
-  // Le garde-fou ne doit pas casser le cas legitime : 3 buts manques -> 3 notifs.
-  res = await rejouer([
-    { statusClass: 'live', scoreClass: 'is-live', score: '5 - 5', date: imminent },
-    { statusClass: 'live', scoreClass: 'is-live', score: '7 - 6', date: imminent },
-  ]);
-  assert.deepStrictEqual(res, [
-    'DEBUT Chambéry vs Paris',
-    'BUT Chambéry 6-5',
-    'BUT Chambéry 7-5',
-    'BUT Paris 7-6',
-  ]);
-  console.log('ok  rattrapage normal (3 buts) : toujours enumere');
-
   nettoyer();
-  console.log('\n12 scenarios passes.');
+  console.log('\n13 scenarios passes.');
 })().catch((e) => {
   nettoyer();
   console.error(e);

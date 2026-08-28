@@ -144,6 +144,35 @@ dépend de la réponse à la question 2 :
 Vendredi 20h00 et 20h30, samedi 19h00 et 20h00, **dimanche 17h00**. Les dimanches
 sont bien utilisés — une planification limitée au vendredi/samedi raterait des matchs.
 
+## Heure d'été / heure d'hiver
+
+La StarLigue joue de septembre à juin : chaque saison traverse **les deux
+changements d'heure** (dernier dimanche d'octobre, dernier dimanche de mars).
+Trois endroits sont concernés, et ils ne se règlent pas de la même façon.
+
+**Les horaires lus sur lnh.fr** — réglé. `parseCoupEnvoi()` interprète
+explicitement « 20h00 » dans le fuseau `Europe/Paris` via la base ICU, jamais
+dans celui du processus. Sans ça le même code donnerait 20h00 sur un PC français
+et 22h00 sur un runner GitHub, qui tourne en UTC — deux heures d'erreur sur la
+détection des matchs. Les tests vérifient quatre dates réparties sur la saison,
+et la suite passe aussi bien sous `TZ=Europe/Paris` que sous `TZ=UTC`.
+
+**L'horodatage des logs** — réglé. Les workflows posent `TZ: Europe/Paris`.
+C'est un *nom de zone*, pas un décalage fixe : la bascule CEST → CET est
+appliquée toute seule. Le job affiche `CEST` en août, il affichera `CET` en
+novembre.
+
+**Le déclenchement des crons** — ⚠️ **pas réglé, à traiter en Phase 5.** Les
+crons GitHub sont toujours exprimés en UTC et ne suivent aucun fuseau. Un
+`cron: '35 17 * * 5'` vaut 19h35 à Paris l'été mais 18h35 l'hiver. Le workflow
+de la saison **dérivera d'une heure fin octobre** si on n'y prend pas garde.
+
+La parade retenue : déclencher le job une heure plus tôt que nécessaire, ce qui
+le rend correct ou en avance dans les deux régimes, et laisser le script décider
+du moment d'agir à partir de l'heure de Paris — qui, elle, est juste toute
+l'année. Sur un repo public les minutes sont illimitées, cette marge ne coûte
+rien.
+
 ## Fragilité assumée
 
 C'est du scraping. Si la LNH change la structure de son site — ce qui vient d'arriver

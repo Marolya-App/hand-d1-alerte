@@ -70,8 +70,61 @@ function texte(html) {
 }
 
 /**
+ * Decalage entre l'heure de Paris et UTC a un instant donne, en millisecondes.
+ *
+ * On passe par la base de fuseaux d'ICU plutot que par un +2 h en dur : elle
+ * connait les bascules heure d'ete / heure d'hiver, donc +2 h en CEST (fin mars
+ * a fin octobre) et +1 h en CET le reste de la saison. La StarLigue joue de
+ * septembre a juin, elle traverse donc les deux changements chaque saison.
+ */
+function decalageParis(instant) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const p = Object.fromEntries(
+    fmt.formatToParts(instant).map((x) => [x.type, x.value])
+  );
+  const commeSiUTC = Date.UTC(
+    Number(p.year),
+    Number(p.month) - 1,
+    Number(p.day),
+    Number(p.hour) % 24,
+    Number(p.minute),
+    Number(p.second)
+  );
+  return commeSiUTC - instant.getTime();
+}
+
+/**
+ * Construit une Date a partir d'une heure "murale" parisienne.
+ *
+ * Le decalage depend de l'instant, qu'on ne connait qu'apres l'avoir applique :
+ * on itere deux fois, ce qui suffit partout sauf dans l'heure inexistante du
+ * passage a l'heure d'ete - creneau ou aucun match ne se joue (2h-3h du matin).
+ */
+function dateParis(annee, mois, jour, heures, minutes) {
+  const approx = Date.UTC(annee, mois - 1, jour, heures, minutes);
+  let t = approx - decalageParis(new Date(approx));
+  t = approx - decalageParis(new Date(t));
+  return new Date(t);
+}
+
+/**
  * Convertit "ven. 04 sept. 20h00" en Date.
- * La saison court de aout a juin : un mois <= 7 appartient a l'annee civile suivante.
+ *
+ * lnh.fr affiche ses horaires en heure de Paris. On les interprete donc
+ * explicitement dans ce fuseau, et non dans celui du processus : sans ca, le
+ * meme code donnerait 20h00 sur le PC de Nicolas et 22h00 sur un runner GitHub
+ * (qui tourne en UTC), soit deux heures d'erreur sur la detection des matchs.
+ *
+ * La saison court de aout a juin : un mois <= 7 appartient a l'annee suivante.
  */
 function parseCoupEnvoi(libelle, saisonDebut) {
   const m = libelle.match(/(\d{1,2})\s+([^\s.]+)\.?\s+(\d{1,2})h(\d{2})/i);
@@ -82,7 +135,7 @@ function parseCoupEnvoi(libelle, saisonDebut) {
   if (!mois) return null;
   const moisNum = mois[1];
   const annee = moisNum >= 8 ? saisonDebut : saisonDebut + 1;
-  return new Date(annee, moisNum - 1, jour, Number(m[3]), Number(m[4]), 0, 0);
+  return dateParis(annee, moisNum, jour, Number(m[3]), Number(m[4]));
 }
 
 /**
@@ -195,4 +248,13 @@ async function liveEnCours() {
   }
 }
 
-module.exports = { matchsStarligue, matchsPertinents, liveEnCours, parseCalendrier, parseCoupEnvoi, post };
+module.exports = {
+  matchsStarligue,
+  matchsPertinents,
+  liveEnCours,
+  parseCalendrier,
+  parseCoupEnvoi,
+  dateParis,
+  decalageParis,
+  post,
+};
