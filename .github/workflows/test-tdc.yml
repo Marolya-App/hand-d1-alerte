@@ -1,0 +1,51 @@
+# Test grandeur nature du 29/08/2026 : Trophee des Champions.
+#
+# C'est le seul match avant la premiere journee du 4 septembre. On fait donc
+# tourner le vrai watcher, avec de vraies notifications sur les telephones, en
+# elargissant temporairement le perimetre au Trophee des Champions - sans
+# toucher au code, via les deux variables d'environnement ci-dessous.
+#
+# Un seul job couvre les deux matchs (17h00 et 20h00) : le portier ne decroche
+# pas dans le creux, la finale etant a moins de 90 min de la fin du premier.
+#
+# A supprimer apres le 29/08.
+
+name: Test live TDC
+
+on:
+  schedule:
+    # 14h35 UTC = 16h35 Paris, 25 min avant le match de 17h00.
+    - cron: '35 14 29 8 *'
+  workflow_dispatch:
+
+# Meme groupe que le suivi de saison : jamais deux watchers en parallele.
+concurrency:
+  group: suivi-live
+  cancel-in-progress: false
+
+env:
+  TZ: Europe/Paris
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Suivi du Trophee des Champions
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          LNH_UNIVERS: matchs-6892
+          COMPETITION_REGEX: 'Trophée des Champions'
+          # 355 min depuis 16h35 -> 22h30, de quoi encaisser prolongations et
+          # tirs au but de la finale (pire cas vers 22h25).
+          JOB_MAX_MINUTES: '355'
+        run: |
+          echo "Heure de depart (Paris) : $(date)"
+          node src/watch.js --portier

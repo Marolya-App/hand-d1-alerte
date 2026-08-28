@@ -1,0 +1,51 @@
+# Suivi de la saison : notifications a chaque but de Daikin StarLigue.
+#
+# Le cron ne cherche PAS a viser l'heure du coup d'envoi. Il ne peut pas :
+# les crons GitHub sont figes en UTC, donc faux six mois par an, et les coups
+# d'envoi varient (vendredi 20h00 et 20h30, samedi 19h00 et 20h00, dimanche
+# 17h00). Il joue donc un role de portier : il frappe souvent et betement, et
+# c'est le script qui decide s'il y a lieu d'agir, a partir de l'heure de Paris
+# — qui, elle, est juste toute l'annee.
+#
+#   - aucun match en vue  -> le job ressort en une dizaine de secondes
+#   - un match approche   -> il reste et bascule a 30 s des le coup d'envoi
+#
+# Consequence : rien a retoucher au passage a l'heure d'hiver.
+
+name: Suivi live
+
+on:
+  schedule:
+    # Toutes les 30 min, vendredi/samedi/dimanche, 13h-21h UTC.
+    # Cette fenetre couvre tous les coups d'envoi dans les deux regimes
+    # horaires : 15h-23h heure de Paris l'ete, 14h-22h l'hiver.
+    - cron: '0,30 13-21 * * 5,6,0'
+  workflow_dispatch:
+
+# Un seul suivi a la fois. Sans ca, deux jobs qui se chevauchent notifieraient
+# chaque but en double : l'etat du score vit dans le job, pas entre les jobs.
+concurrency:
+  group: suivi-live
+  cancel-in-progress: false
+
+env:
+  TZ: Europe/Paris
+
+jobs:
+  suivi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Suivi
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          echo "Heure de depart (Paris) : $(date)"
+          node src/watch.js --portier

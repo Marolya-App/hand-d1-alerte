@@ -52,7 +52,12 @@ async function tick() {
   } catch (e) {
     log(`erreur LNH : ${e.message}`);
     // En plein match on reessaie tout de suite, pas dans 10 minutes.
-    return enDirect ? config.timing.matchMs : config.timing.veilleMs;
+    return {
+      attente: enDirect ? config.timing.matchMs : config.timing.veilleMs,
+      actifs: enDirect ? 1 : 0,
+      prochain: null,
+      erreur: true,
+    };
   }
 
   const actifs = matchs.filter((m) => aSuivre(m, maintenant));
@@ -106,35 +111,35 @@ async function tick() {
         const dHome = m.homeScore - e.homeScore;
         const dAway = m.awayScore - e.awayScore;
 
-        // Garde-fou n°2 : un bond invraisemblable entre deux releves n'est pas
-        // une avalanche de buts, c'est une anomalie de la source. On l'enregistre
-        // sans spammer — la notification de fin donnera le score.
+        // Garde-fou : un bond invraisemblable entre deux releves n'est pas une
+        // avalanche de buts, c'est une anomalie de la source. On enregistre le
+        // nouveau score sans spammer - mais on ne saute PAS la suite, sinon un
+        // match dont le score final arrive d'un bloc n'aurait aucune
+        // notification de fin.
         if (dHome + dAway > config.timing.butsMaxParReleve) {
           log(
             `bond anormal ignore : ${e.homeScore}-${e.awayScore} -> ` +
               `${m.homeScore}-${m.awayScore} (${dHome + dAway} buts d'un coup)`
           );
-          e.homeScore = m.homeScore;
-          e.awayScore = m.awayScore;
-          e.majLe = maintenant;
-          s.matchs[m.id] = e;
-          continue;
-        }
-
-        // Un but = une notification, meme si le polling en a rate plusieurs.
-        // On reconstitue les scores intermediaires pour rester fidele.
-        for (let i = 1; i <= Math.max(0, dHome); i++) {
-          const etape = { ...m, homeScore: e.homeScore + i, awayScore: e.awayScore };
-          log(`BUT ${m.home} : ${etape.homeScore} - ${etape.awayScore}`);
-          await messages.but(etape, m.home);
-        }
-        for (let i = 1; i <= Math.max(0, dAway); i++) {
-          const etape = { ...m, homeScore: m.homeScore, awayScore: e.awayScore + i };
-          log(`BUT ${m.away} : ${etape.homeScore} - ${etape.awayScore}`);
-          await messages.but(etape, m.away);
-        }
-        if (dHome < 0 || dAway < 0) {
-          log(`score corrige a la baisse (${e.homeScore}-${e.awayScore} -> ${m.homeScore}-${m.awayScore})`);
+        } else {
+          // Un but = une notification, meme si le polling en a rate plusieurs.
+          // On reconstitue les scores intermediaires pour rester fidele.
+          for (let i = 1; i <= Math.max(0, dHome); i++) {
+            const etape = { ...m, homeScore: e.homeScore + i, awayScore: e.awayScore };
+            log(`BUT ${m.home} : ${etape.homeScore} - ${etape.awayScore}`);
+            await messages.but(etape, m.home);
+          }
+          for (let i = 1; i <= Math.max(0, dAway); i++) {
+            const etape = { ...m, homeScore: m.homeScore, awayScore: e.awayScore + i };
+            log(`BUT ${m.away} : ${etape.homeScore} - ${etape.awayScore}`);
+            await messages.but(etape, m.away);
+          }
+          if (dHome < 0 || dAway < 0) {
+            log(
+              `score corrige a la baisse (${e.homeScore}-${e.awayScore} -> ` +
+                `${m.homeScore}-${m.awayScore})`
+            );
+          }
         }
       }
       e.homeScore = m.homeScore;
@@ -157,34 +162,82 @@ async function tick() {
   state.sauver(s);
   enDirect = actifs.length > 0;
 
+  const prochain = matchs
+    .filter((m) => m.statut === 'a-venir' && m.coupEnvoi && m.coupEnvoi.getTime() > maintenant)
+    .sort((a, b) => a.coupEnvoi - b.coupEnvoi)[0];
+
   if (actifs.length) {
     log(
       `${actifs.length} match(s) suivi(s) : ` +
         actifs.map((m) => `${m.home}-${m.away} [${m.statut}] ${m.scoreTexte}`).join(' | ')
     );
-    return config.timing.matchMs;
+    return { attente: config.timing.matchMs, actifs: actifs.length, prochain };
   }
 
-  const prochain = matchs
-    .filter((m) => m.statut === 'a-venir' && m.coupEnvoi && m.coupEnvoi.getTime() > maintenant)
-    .sort((a, b) => a.coupEnvoi - b.coupEnvoi)[0];
   log(
     `veille — rien en cours.` +
       (prochain ? ` Prochain : ${prochain.home} vs ${prochain.away}, ${prochain.dateTexte}` : '')
   );
-  return config.timing.veilleMs;
+  return { attente: config.timing.veilleMs, actifs: 0, prochain };
 }
 
+const dors = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Boucle sans fin, pour un process qui tourne en continu. */
 async function boucle() {
-  const attente = await tick();
-  if (ONCE) return;
-  setTimeout(boucle, attente);
+  for (;;) {
+    const r = await tick();
+    if (ONCE) return;
+    await dors(r.attente);
+  }
 }
 
-module.exports = { tick, aSuivre };
+/**
+ * Mode portier, pour GitHub Actions.
+ *
+ * Le cron ne sait pas etre precis : il est fige en UTC, donc faux six mois par
+ * an, et les coups d'envoi varient (17h, 19h, 20h, 20h30). On le declenche donc
+ * souvent et betement, et c'est ici qu'on decide s'il y a lieu d'agir - a partir
+ * de l'heure de Paris, qui est juste toute l'annee.
+ *
+ *   - aucun match dans la fenetre  -> on ressort en quelques secondes
+ *   - un match approche ou tourne  -> on reste jusqu'a la fin des matchs
+ */
+async function portier() {
+  const debut = Date.now();
+
+  for (;;) {
+    const r = await tick();
+
+    // On ne sort que si RIEN ne tourne et que rien n'approche. Un creux entre
+    // deux matchs d'une meme soiree (fin du match de 17h, finale a 20h) ne doit
+    // pas faire tomber le job : sinon le second match ne serait jamais suivi.
+    if (r.actifs === 0) {
+      const delta = r.prochain ? r.prochain.coupEnvoi.getTime() - Date.now() : Infinity;
+      if (delta > config.timing.fenetrePortierMs) {
+        log(
+          Number.isFinite(delta)
+            ? `portier : prochain match dans ${Math.round(delta / 60000)} min — sortie`
+            : 'portier : aucun match a venir — sortie'
+        );
+        return;
+      }
+      log(`portier : match dans ${Math.round(delta / 60000)} min — on reste en veille`);
+    }
+
+    if (Date.now() - debut > config.timing.dureeMaxJobMs) {
+      log('duree maximale du job atteinte — sortie');
+      return;
+    }
+    await dors(r.attente);
+  }
+}
+
+module.exports = { tick, aSuivre, portier, boucle };
 
 if (require.main === module) {
-  boucle().catch((e) => {
+  const lancer = process.argv.includes('--portier') ? portier : boucle;
+  lancer().catch((e) => {
     console.error(e);
     process.exit(1);
   });

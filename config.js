@@ -38,15 +38,17 @@ module.exports = {
       '(KHTML, like Gecko) Chrome/126.0 Safari/537.36',
 
     // univers = filtre de competition. d1-26623 -> Daikin StarLigue seule.
-    universStarligue: 'd1-26623',
+    // Surchargeable pour tester sur une autre competition (Trophee des
+    // Champions, Coupe de France...) sans toucher au code.
+    universStarligue: process.env.LNH_UNIVERS || 'd1-26623',
     universTous: 'matchs-6892',
 
     seasonId: '40', // 2026/2027
     formKey: '701113370',
   },
 
-  // Perimetre : uniquement la D1 masculine.
-  competitionPattern: /Daikin StarLigue/i,
+  // Perimetre : uniquement la D1 masculine, sauf surcharge explicite.
+  competitionPattern: new RegExp(process.env.COMPETITION_REGEX || 'Daikin StarLigue', 'i'),
 
   clubs: [
     'Aix', 'Caen', 'Cesson-Rennes', 'Chambéry', 'Chartres', 'Dunkerque',
@@ -67,6 +69,11 @@ module.exports = {
     // Au-dela de ce nombre de buts entre deux releves, on considere que la
     // source a saute (et non qu'il y a eu 20 buts en 30 s) : on n'enumere pas.
     butsMaxParReleve: 8,
+    // Mode portier (CI) : si aucun match ne commence dans ce delai, le job
+    // ressort immediatement au lieu de mobiliser un runner pour rien.
+    fenetrePortierMs: 90 * 60 * 1000,
+    // Filet global d'un job CI. Le plafond GitHub est de 360 min par job.
+    dureeMaxJobMs: Number(process.env.JOB_MAX_MINUTES || 345) * 60 * 1000,
   },
 
   stateFile: path.join(__dirname, 'state.json'),

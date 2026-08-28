@@ -211,8 +211,97 @@ async function rejouer(etapes) {
   assert.strictEqual(lnh.parseCoupEnvoi('sam. 10 janv. 18h30', 2026).getUTCFullYear(), 2027);
   console.log('ok  dates : bascule d annee civile en cours de saison');
 
+  // --- Scenarios 14 a 16 : le portier (mode GitHub Actions) ----------------
+  // C'est la piece qui remplace un cron precis. Sa regle : ne sortir que si
+  // rien ne tourne ET que rien n'approche.
+  {
+    const t = config.timing;
+    const sauvegarde = { ...t };
+    t.veilleMs = 1;
+    t.matchMs = 1;
+    t.dureeMaxJobMs = 10000;
+
+    const dansNMin = (n) => dateLNH(new Date(Date.now() + n * 60000));
+
+    // Chaque appel consomme une etape ; la derniere se repete.
+    function scenarioPortier(etapes) {
+      let i = 0;
+      lnh.matchsPertinents = async () => {
+        const e = etapes[Math.min(i++, etapes.length - 1)];
+        const html = e
+          .map((m, k) =>
+            fragment({
+              id: String(90000 + k),
+              date: m.date,
+              statusClass: m.cls,
+              scoreClass: m.sc,
+              score: m.score,
+            })
+          )
+          .join('');
+        return lnh
+          .parseCalendrier(html, new Date().getFullYear())
+          .filter((m) => config.competitionPattern.test(m.competition));
+      };
+      return () => i;
+    }
+
+    // 14 : rien en cours, prochain match dans 8 jours -> sortie immediate.
+    nettoyer();
+    envoyees.length = 0;
+    let compteur = scenarioPortier([
+      [{ date: dansNMin(8 * 24 * 60), cls: 'waiting', sc: 'is-coming', score: 'vs' }],
+    ]);
+    await watch.portier();
+    assert.strictEqual(compteur(), 1, 'le portier doit sortir apres un seul releve');
+    console.log('ok  portier : hors fenetre, sortie apres 1 releve');
+
+    // 15 : match dans 60 min -> il reste, suit le match, puis sort.
+    nettoyer();
+    envoyees.length = 0;
+    compteur = scenarioPortier([
+      [{ date: dansNMin(60), cls: 'waiting', sc: 'is-coming', score: 'vs' }],
+      [{ date: dansNMin(-5), cls: 'live', sc: 'is-live', score: '1 - 0' }],
+      [{ date: dansNMin(-5), cls: 'live', sc: 'is-live', score: '2 - 0' }],
+      [{ date: dansNMin(-120), cls: 'finish', sc: 'is-finish', score: '30 - 28' }],
+    ]);
+    await watch.portier();
+    assert.ok(compteur() >= 4, 'le portier doit avoir suivi le match jusqu au bout');
+    assert.ok(
+      envoyees.includes('BUT Chambéry 2-0'),
+      'le but marque pendant le suivi doit avoir ete notifie'
+    );
+    assert.ok(envoyees.some((x) => x.startsWith('FIN ')), 'la fin doit etre notifiee');
+    console.log('ok  portier : entre dans la fenetre, suit le match, puis sort');
+
+    // 16 : creux entre deux matchs d'une meme soiree -> il ne doit PAS sortir.
+    // C'est le cas reel du 29/08 : match a 17h, finale a 20h.
+    nettoyer();
+    envoyees.length = 0;
+    compteur = scenarioPortier([
+      [
+        { date: dansNMin(-120), cls: 'finish', sc: 'is-finish', score: '30 - 28' },
+        { date: dansNMin(70), cls: 'waiting', sc: 'is-coming', score: 'vs' },
+      ],
+      [
+        { date: dansNMin(-120), cls: 'finish', sc: 'is-finish', score: '30 - 28' },
+        { date: dansNMin(-1), cls: 'live', sc: 'is-live', score: '1 - 0' },
+      ],
+      [
+        { date: dansNMin(-120), cls: 'finish', sc: 'is-finish', score: '30 - 28' },
+        { date: dansNMin(-130), cls: 'finish', sc: 'is-finish', score: '25 - 24' },
+      ],
+      [{ date: dansNMin(8 * 24 * 60), cls: 'waiting', sc: 'is-coming', score: 'vs' }],
+    ]);
+    await watch.portier();
+    assert.ok(compteur() >= 3, 'le portier ne doit pas sortir dans le creux entre deux matchs');
+    console.log('ok  portier : ne decroche pas entre deux matchs de la meme soiree');
+
+    Object.assign(t, sauvegarde);
+  }
+
   nettoyer();
-  console.log('\n13 scenarios passes.');
+  console.log('\n16 scenarios passes.');
 })().catch((e) => {
   nettoyer();
   console.error(e);
